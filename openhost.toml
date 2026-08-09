@@ -1,0 +1,59 @@
+[app]
+name = "openhands"
+version = "0.1.0"
+description = "OpenHands (formerly OpenDevin) — an autonomous AI software-engineering agent — running as a self-hosted web app on OpenHost. The zone owner gets the full OpenHands web IDE auto-authenticated via OpenHost SSO. The agent runs in the in-container LocalRuntime (RUNTIME=local), so no host Docker socket is required. The Anthropic API key is pulled at boot from the OpenHost secrets service and is never baked into the image; OpenHands does persist it to its own settings.json under app_data (the same write it makes when the owner types the key into its settings UI). Anonymous visitors cannot reach any route: the whole app is owner-only because the agent executes arbitrary shell commands in this container."
+authors = ["Andrew Laack <andrew@laack.co>"]
+
+[runtime.container]
+image = "Dockerfile"
+# nginx front proxy port. OpenHands' uvicorn server binds
+# 127.0.0.1:3000 inside the container; nginx listens on 8080 and is
+# what the OpenHost router forwards to (HTTP + the Socket.IO agent
+# event stream at /socket.io, which requires WebSocket upgrade).
+port = 8080
+
+[routing]
+# nginx serves a static 200 on /_healthz the instant it is up, well
+# before OpenHands finishes importing, so the OpenHost readiness probe
+# stays green during the (slow) cold start.
+health_check = "/_healthz"
+# No public_paths. The OpenHands OSS web UI has NO authentication of
+# its own and the agent executes arbitrary shell commands inside this
+# container (RUNTIME=local, no sandbox), so the entire app must stay
+# behind OpenHost zone_auth. The router rejects every anonymous request
+# before it reaches the container; nginx additionally denies any request
+# lacking the router-stamped X-OpenHost-Is-Owner: true header.
+
+[resources]
+# LocalRuntime runs the agent's action-execution server as a subprocess
+# in this same container plus whatever the agent spawns (compilers,
+# test runners, a headless browser). OpenHands is memory-hungry; 4 GiB
+# / 2 cores is a sensible baseline.
+memory_mb = 4096
+cpu_cores = 2.0
+
+[data]
+# Persistent state under /data/app_data/openhands/:
+#   state/       -> FILE_STORE_PATH (/.openhands symlinked here):
+#                   settings.json, conversations, event streams, secrets.
+#   workspace/   -> the agent's working directory (WORKSPACE_BASE).
+# Credential note: the Anthropic API key is fetched from the secrets
+# service at boot and is also persisted by OpenHands into
+# state/settings.json under app_data (OpenHands requires a settings
+# record to create conversations, and it persists the key there whether
+# we seed it or the owner types it into the settings UI). app_data is
+# only visible to apps the owner explicitly grants access_all_data.
+# Since the key is independently retrievable from the secrets service,
+# app_data is not its sole home. See README "Credential handling".
+app_data = true
+app_temp_data = true
+
+# The Anthropic API key is provisioned via the OpenHost secrets service
+# rather than an env var or an on-disk file. The owner stores
+# ANTHROPIC_API_KEY in the secrets app; this app fetches it at boot
+# through the router-mediated service proxy using its OPENHOST_APP_TOKEN.
+[[services.v2.consumes]]
+service = "github.com/imbue-openhost/openhost/services/secrets"
+shortname = "secrets"
+version = ">=0.1.0"
+grants = [{ key = "ANTHROPIC_API_KEY" }]

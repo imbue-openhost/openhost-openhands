@@ -1,0 +1,107 @@
+# nginx front proxy for OpenHost OpenHands.
+#
+# Substituted at boot by start.sh:
+#   __UPSTREAM_PORT__  -> the loopback port OpenHands' uvicorn listens on
+#
+# Responsibilities:
+#   * Terminate the OpenHost-routed :8080 connection.
+#   * Serve a static 200 on /_healthz (declared health_check) the
+#     instant nginx is up, before OpenHands has finished importing.
+#   * Serve a 200 placeholder on any 5xx from the upstream during the
+#     (slow) OpenHands cold start, so the OpenHost readiness probe that
+#     polls "/" doesn't see a hard 5xx and mark the app failed.
+#   * Deny any request that does NOT carry the router-stamped
+#     X-OpenHost-Is-Owner: true header. OpenHands' OSS UI has no auth of
+#     its own and the agent runs arbitrary shell commands, so the app is
+#     owner-only. The OpenHost router already blocks anonymous traffic
+#     (no public_paths); this is a second, in-container gate.
+#   * Proxy HTTP + Socket.IO WebSocket traffic (/socket.io) to the
+#     OpenHands server on 127.0.0.1:__UPSTREAM_PORT__, preserving query
+#     strings (Socket.IO carries session data in the query, not headers).
+
+worker_processes 1;
+error_log /dev/stderr warn;
+pid /tmp/nginx.pid;
+
+events {
+    worker_connections 1024;
+}
+
+http {
+    access_log /dev/stdout;
+
+    client_body_temp_path /tmp/nginx-client-body;
+    proxy_temp_path       /tmp/nginx-proxy;
+    fastcgi_temp_path     /tmp/nginx-fastcgi;
+    uwsgi_temp_path       /tmp/nginx-uwsgi;
+    scgi_temp_path        /tmp/nginx-scgi;
+
+    map $http_upgrade $connection_upgrade {
+        default upgrade;
+        ''      close;
+    }
+
+    # Owner is the OpenHost zone owner (router-stamped, unspoofable).
+    map $http_x_openhost_is_owner $is_owner {
+        default 0;
+        "true"  1;
+    }
+
+    # Real external host, forwarded by the router.
+    map $http_x_forwarded_host $forward_host {
+        default $http_x_forwarded_host;
+        ""      $host;
+    }
+
+    # OpenHands' socket buffer max is 4 MB; allow generous bodies for
+    # file uploads and large event payloads.
+    client_max_body_size 512m;
+
+    upstream openhands {
+        server 127.0.0.1:__UPSTREAM_PORT__;
+    }
+
+    server {
+        listen 8080;
+        server_name _;
+
+        absolute_redirect off;
+
+        # Long timeouts: agent streams and Socket.IO connections are
+        # long-lived.
+        proxy_read_timeout  86400s;
+        proxy_send_timeout  86400s;
+
+        # Health check: static 200 as soon as nginx is up. Placed BEFORE
+        # the owner gate so the readiness probe (no owner header)
+        # succeeds during cold start.
+        location = /_healthz {
+            add_header Content-Type text/plain;
+            return 200 "ok\n";
+        }
+
+        # Cold-start placeholder: while OpenHands is still importing it
+        # returns 5xx (or refuses the connection). Intercept those and
+        # serve a friendly 200 so the OpenHost readiness probe on "/"
+        # doesn't flag the app as failed.
+        location @coldstart {
+            add_header Content-Type text/html;
+            return 200 "<!doctype html><meta charset=utf-8><title>OpenHands starting</title><body style=\"font-family:system-ui;padding:2rem\"><h1>OpenHands is starting...</h1><p>This can take up to a minute on a cold start. Refresh shortly.</p>";
+        }
+
+        # Owner gate + upstream proxy for everything else.
+        location / {
+            if ($is_owner = 0) {
+                return 403 "forbidden\n";
+            }
+            proxy_pass http://openhands;
+            include /opt/openhost-openhands/proxy_common.conf;
+
+            # Turn upstream cold-start 5xx / connection errors into the
+            # placeholder above (only for the initial window; once
+            # OpenHands is up it answers 200s directly).
+            proxy_intercept_errors on;
+            error_page 502 503 504 = @coldstart;
+        }
+    }
+}
