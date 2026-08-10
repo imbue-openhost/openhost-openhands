@@ -109,12 +109,32 @@ Change it in the OpenHands settings modal (persists in
 `anthropic/claude-sonnet-4-5-20250929` (LiteLLM `provider/model`
 format).
 
-## Cold start
+## Cold start & the runtime warm pool
 
-OpenHands takes up to a minute to finish importing. During that window
-nginx serves `/_healthz` (200) immediately and turns any upstream 5xx on
-`/` into a friendly "starting…" placeholder so the OpenHost readiness
-probe doesn't flag the app as failed.
+Two different "starting" phases exist:
+
+1. **App import** — OpenHands takes up to a minute to finish importing.
+   During that window nginx serves `/_healthz` (200) immediately and
+   turns any upstream 5xx on `/` into a friendly "starting…" placeholder
+   so the OpenHost readiness probe doesn't flag the app as failed.
+
+2. **Runtime start** — each conversation needs a LocalRuntime, whose
+   cold start (~60-90s) boots a bash/tmux session, a jupyter kernel
+   gateway, an openvscode-server, and a headless Chromium (the browser
+   reset alone is ~30s). Done lazily on the first message, that shows up
+   as the "Starting runtime… this may take 1-2 minutes" banner — and if
+   several conversations initialise at once they contend for CPU and can
+   blow past OpenHands' 120s readiness deadline, so the banner can appear
+   to hang forever.
+
+   To fix this, `start.sh` sets `INITIAL_NUM_WARM_SERVERS=1` and
+   `DESIRED_NUM_WARM_SERVERS=1`: a runtime is pre-warmed at app boot and
+   one is kept in reserve, so the owner's conversation attaches to an
+   already-ready runtime almost instantly instead of paying the cold
+   start. This is why the app is provisioned with extra memory/CPU (two
+   runtimes can be live briefly during hand-off). After the app itself
+   finishes importing, give it a further ~90s for the first warm runtime
+   to become ready before starting a conversation.
 
 ## Deploying
 

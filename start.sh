@@ -230,6 +230,24 @@ export WORKSPACE_BASE="$WORKSPACE_DIR"
 export SANDBOX_VOLUMES="$WORKSPACE_DIR:/workspace:rw"
 export LLM_MODEL="$DEFAULT_MODEL"
 export LOG_ALL_EVENTS=true
+
+# ---------------------------------------------------------------------------
+# Runtime warm pool — this is what makes "Starting runtime..." fast.
+# ---------------------------------------------------------------------------
+# A LocalRuntime cold start is expensive (~60-90s): it launches the
+# action-execution server subprocess, which boots a bash/tmux session,
+# initialises the jupyter kernel gateway + openvscode-server plugins,
+# and resets a headless Chromium (the browser reset alone is ~30s). Done
+# lazily on the FIRST message of every conversation, that shows up as a
+# long "Starting runtime..." wait — and if several conversations init at
+# once they contend for CPU and can exceed the 120s readiness deadline,
+# so the wait appears to never finish.
+#
+# Pre-warm ONE runtime at server boot and keep one warm in reserve, so a
+# ready action server is waiting before the owner sends their first
+# message and the conversation attaches to it almost instantly.
+export INITIAL_NUM_WARM_SERVERS="${INITIAL_NUM_WARM_SERVERS:-1}"
+export DESIRED_NUM_WARM_SERVERS="${DESIRED_NUM_WARM_SERVERS:-1}"
 if [ -n "${LLM_KEY:-}" ]; then
     export LLM_API_KEY="$LLM_KEY"
 fi

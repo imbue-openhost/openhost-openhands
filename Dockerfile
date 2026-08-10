@@ -39,6 +39,14 @@ RUN apt-get update -qq \
  && rm -rf /var/lib/apt/lists/* \
  && tmux -V
 
+# uv / uvx: OpenHands' default MCP integration shells out to `uvx` to
+# launch stdio MCP servers (e.g. the optional Tavily search tool). It is
+# not in the base image, so every runtime init logs a noisy
+# "No such file or directory: 'uvx'" error. Installing uv removes that
+# and enables those MCP tools if the owner ever configures a search key.
+RUN curl -fsSL https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin sh \
+ && uv --version && uvx --version
+
 # ---------------------------------------------------------------------------
 # Playwright Chromium for the agent's web-browsing tool.
 # ---------------------------------------------------------------------------

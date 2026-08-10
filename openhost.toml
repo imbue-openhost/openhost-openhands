@@ -27,10 +27,12 @@ health_check = "/_healthz"
 [resources]
 # LocalRuntime runs the agent's action-execution server as a subprocess
 # in this same container plus whatever the agent spawns (compilers,
-# test runners, a headless browser). OpenHands is memory-hungry; 4 GiB
-# / 2 cores is a sensible baseline.
-memory_mb = 4096
-cpu_cores = 2.0
+# test runners, a headless Chromium, a jupyter kernel gateway, an
+# openvscode-server). With a warm runtime kept ready (see start.sh) two
+# such runtimes can be live at once during hand-off, so give it headroom:
+# 6 GiB / 3 cores. Bump further for heavy builds.
+memory_mb = 6144
+cpu_cores = 3.0
 
 [data]
 # Persistent state under /data/app_data/openhands/:
