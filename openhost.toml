@@ -1,7 +1,7 @@
 [app]
 name = "openhands"
 version = "0.1.0"
-description = "OpenHands (formerly OpenDevin) — an autonomous AI software-engineering agent — running as a self-hosted web app on OpenHost. The zone owner gets the full OpenHands web IDE auto-authenticated via OpenHost SSO. The agent runs in the in-container LocalRuntime (RUNTIME=local), so no host Docker socket is required. The Anthropic API key is pulled at boot from the OpenHost secrets service and is never baked into the image; OpenHands does persist it to its own settings.json under app_data (the same write it makes when the owner types the key into its settings UI). Anonymous visitors cannot reach any route: the whole app is owner-only because the agent executes arbitrary shell commands in this container."
+description = "OpenHands (formerly OpenDevin) — an autonomous AI software-engineering agent — running as a self-hosted web app on Cloud in a Bottle. The zone owner gets the full OpenHands web IDE auto-authenticated via Cloud in a Bottle SSO. The agent runs in the in-container LocalRuntime (RUNTIME=local), so no host Docker socket is required. The Anthropic API key is pulled at boot from the Cloud in a Bottle secrets service and is never baked into the image; OpenHands does persist it to its own settings.json under app_data (the same write it makes when the owner types the key into its settings UI). Anonymous visitors cannot reach any route: the whole app is owner-only because the agent executes arbitrary shell commands in this container."
 authors = ["Andrew Laack <andrew@laack.co>"]
 
 [runtime.container]
